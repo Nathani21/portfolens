@@ -16,6 +16,23 @@ DEFAULT_SURFACE_ID = "portfolio_dashboard"
 # Components from the basic catalog that our layouts use.
 KNOWN_COMPONENTS = {"Text", "Row", "Column", "Card", "Divider", "List"}
 
+# Enum values allowed by the v1.0 basic catalog (checked against catalog.json).
+# v1.0 Text has no heading variants: emphasis comes from `weight` instead.
+ALLOWED_VALUES = {
+    "Text": {"variant": {"caption", "body"}},
+    "Row": {
+        "justify": {"start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"},
+        "align": {"start", "center", "end", "stretch"},
+    },
+    "Column": {
+        "justify": {"start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"},
+        "align": {"start", "center", "end", "stretch"},
+    },
+}
+
+TITLE_WEIGHT = 700
+EMPHASIS_WEIGHT = 600
+
 # UAX #31-style identifier: letters, digits and underscores, not starting with a digit.
 ID_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -86,11 +103,16 @@ def dashboard_data_model(summary, mode):
 
 # --- Components ---
 
-def _text(component_id, text, variant=None):
-    """A Text component; `text` is a literal string or {"@path": ...}."""
+def _text(component_id, text, variant=None, weight=None):
+    """A Text component; `text` is a literal string or {"@path": ...}.
+
+    `variant` is "caption" or "body"; `weight` is a font weight like 600.
+    """
     component = {"id": component_id, "component": "Text", "text": text}
     if variant:
         component["variant"] = variant
+    if weight:
+        component["weight"] = weight
     return component
 
 
@@ -109,7 +131,7 @@ def _kpi_card(name, label, path):
             "children": [f"kpi_{name}_label", f"kpi_{name}_value"],
         },
         _text(f"kpi_{name}_label", label, "caption"),
-        _text(f"kpi_{name}_value", _bind(path), "h3"),
+        _text(f"kpi_{name}_value", _bind(path), weight=EMPHASIS_WEIGHT),
     ]
 
 
@@ -126,7 +148,7 @@ def dashboard_components():
             "children": ["header", "kpi_row", "holdings_title", "holdings", "missing"],
         },
         {"id": "header", "component": "Column", "children": ["title", "mode_note"]},
-        _text("title", "Portfolio", "h2"),
+        _text("title", "Portfolio", weight=TITLE_WEIGHT),
         _text("mode_note", _bind("/mode_note"), "caption"),
         {
             "id": "kpi_row",
@@ -137,7 +159,7 @@ def dashboard_components():
         *_kpi_card("value", "Total value", "/totals/value"),
         *_kpi_card("day", "Today", "/totals/day"),
         *_kpi_card("pnl", "Total gain/loss", "/totals/pnl"),
-        _text("holdings_title", "Holdings", "h4"),
+        _text("holdings_title", "Holdings", weight=EMPHASIS_WEIGHT),
         {
             "id": "holdings",
             "component": "Column",
@@ -155,7 +177,7 @@ def dashboard_components():
             "component": "Column",
             "children": ["position_ticker", "position_shares"],
         },
-        _text("position_ticker", _bind("ticker"), "h5"),
+        _text("position_ticker", _bind("ticker"), weight=EMPHASIS_WEIGHT),
         _text("position_shares", _bind("shares"), "caption"),
         {
             "id": "position_numbers",
@@ -219,6 +241,7 @@ def check_components(components):
     """Check the rules A2UI renderers rely on. Raises ValueError on the first problem.
 
     - every component has a valid, unique id and a known component type
+    - enum properties (Text variant, Row/Column justify and align) use allowed values
     - exactly one component has the id "root"
     - every child id points to a component that exists
     - templates have a string path and a componentId
@@ -237,10 +260,16 @@ def check_components(components):
             raise ValueError(f"Invalid component id: {component_id!r}.")
         if component_id in ids:
             raise ValueError(f"Duplicate component id: {component_id}.")
-        if component.get("component") not in KNOWN_COMPONENTS:
-            raise ValueError(
-                f"{component_id}: unknown component type {component.get('component')!r}."
-            )
+        component_type = component.get("component")
+        if not isinstance(component_type, str) or component_type not in KNOWN_COMPONENTS:
+            raise ValueError(f"{component_id}: unknown component type {component_type!r}.")
+        for prop, allowed in ALLOWED_VALUES.get(component_type, {}).items():
+            value = component.get(prop)
+            if prop in component and (not isinstance(value, str) or value not in allowed):
+                raise ValueError(
+                    f"{component_id}: {prop} {value!r} isn't allowed "
+                    f"for {component_type}."
+                )
         ids.add(component_id)
 
     if "root" not in ids:
