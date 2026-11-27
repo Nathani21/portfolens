@@ -81,3 +81,18 @@ def test_history_provider_failure(client, monkeypatch):
     response = client.get("/history/AAPL")
     assert response.status_code == 502
     assert "busy" in response.json()["detail"]
+
+
+def test_dashboard(client):
+    response = client.get("/dashboard")
+    assert response.status_code == 200
+    messages = response.json()["messages"]
+    assert len(messages) == 1
+    surface = messages[0]["createSurface"]
+    assert messages[0]["version"] == "1.0"
+    assert surface["surfaceId"] == "portfolio_dashboard"
+    model = surface["dataModel"]
+    assert model["totals"]["value"] == "$12,198.70"
+    assert model["mode_note"].startswith("Demo prices")
+    assert len(model["positions"]) == 5
+    assert model["missing_note"] == ""

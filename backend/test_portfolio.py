@@ -1,6 +1,7 @@
 import pytest
 
 from portfolio import (
+    DEMO_HOLDINGS,
     Holding,
     Quote,
     parse_holdings,
@@ -8,6 +9,7 @@ from portfolio import (
     portfolio_summary,
     position_summary,
 )
+from prices import DEMO_QUOTES
 
 # Fixed sample data, so tests never touch a price API.
 HOLDINGS = [Holding("AAPL", 10, 150), Holding("MSFT", 6, 250)]
@@ -134,3 +136,7 @@ def test_portfolio_summary_does_not_change_inputs():
     holdings = list(HOLDINGS)
     portfolio_summary(holdings, QUOTES)
     assert holdings == HOLDINGS
+
+
+def test_demo_holdings_have_demo_prices():
+    assert {h.ticker for h in DEMO_HOLDINGS} == set(DEMO_QUOTES)
