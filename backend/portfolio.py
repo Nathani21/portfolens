@@ -21,6 +21,17 @@ class Quote:
     prev_close: float
 
 
+# A made-up demo portfolio, shown until users can bring their own holdings.
+# The tickers match the demo prices in prices.DEMO_QUOTES.
+DEMO_HOLDINGS = (
+    Holding("AAPL", 10, 150),
+    Holding("MSFT", 6, 250),
+    Holding("NVDA", 25, 90),
+    Holding("GOOGL", 12, 140),
+    Holding("AMZN", 8, 180),
+)
+
+
 def percent(part, whole):
     """Return part as a percentage of whole, or None when whole is zero."""
     if whole == 0:
