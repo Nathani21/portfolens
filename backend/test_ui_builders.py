@@ -138,6 +138,26 @@ def test_only_catalog_text_variants_are_used():
     assert variants <= {"caption", "body"}
 
 
+def test_no_layout_weight_used_for_emphasis():
+    """Regression: `weight` is flex-grow, not font weight, so the layout doesn't set it."""
+    assert all("weight" not in c for c in dashboard_components())
+
+
+def test_titles_use_markdown_bold():
+    by_id = component_by_id(dashboard_components())
+    assert by_id["title"]["text"] == "**Portfolio**"
+    assert by_id["holdings_title"]["text"] == "**Holdings**"
+
+
+def test_check_components_allows_weight_inside_row():
+    check_components(
+        [
+            {"id": "root", "component": "Row", "children": ["a"]},
+            {"id": "a", "component": "Text", "text": "x", "weight": 1},
+        ]
+    )
+
+
 def test_holdings_use_a_template_over_positions():
     holdings = component_by_id(dashboard_components())["holdings"]
     assert holdings["children"] == {"path": "/positions", "componentId": "position_row"}
@@ -206,6 +226,13 @@ def test_check_components_accepts_minimal():
         ([{"id": "root", "component": "Text", "text": "x", "variant": ["body"]}], "isn't allowed"),
         ([{"id": "root", "component": "Row", "children": [], "justify": "middle"}], "justify 'middle'"),
         ([{"id": "root", "component": "Column", "children": [], "align": "baseline"}], "align 'baseline'"),
+        (
+            [
+                {"id": "root", "component": "Card", "child": "a"},
+                {"id": "a", "component": "Text", "text": "x", "weight": 600},
+            ],
+            "weight is only allowed inside a Row or Column",
+        ),
         ([{"id": "root", "component": "Column", "children": ["ghost"]}], "child 'ghost' doesn't exist"),
         ([{"id": "root", "component": "Card", "child": "ghost"}], "child 'ghost' doesn't exist"),
         ([{"id": "root", "component": "Column", "children": [{"x": 1}]}], "doesn't exist"),
