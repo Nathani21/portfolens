@@ -1,5 +1,7 @@
 # Portfolens
 
+![CI](https://github.com/Nathani21/portfolens/actions/workflows/ci.yml/badge.svg)
+
 A stock portfolio dashboard where an AI agent builds the view with Google's A2UI protocol.
 
 🚧 Work in progress.
