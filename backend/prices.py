@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -89,18 +90,26 @@ def parse_massive_bars(ticker, data):
 
     Massive's "t" is the bar's start in Unix milliseconds. Daily bars start at
     midnight US Eastern, which is the same calendar date in UTC.
-    Malformed bars are skipped.
+    Malformed bars, including timestamps too large to be a date, are skipped.
     """
     if not isinstance(data, dict):
         raise PriceError("The price service sent an unexpected response.")
+    results = data.get("results")
+    if results is None:
+        results = []
+    if not isinstance(results, list):
+        raise PriceError("The price service sent an unexpected response.")
     bars = []
-    for bar in data.get("results") or []:
+    for bar in results:
         if not isinstance(bar, dict):
             continue
         timestamp, close = bar.get("t"), bar.get("c")
         if not (_positive_number(timestamp) and _positive_number(close)):
             continue
-        day = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).date()
+        try:
+            day = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).date()
+        except (OverflowError, OSError, ValueError):
+            continue
         bars.append({"date": day.isoformat(), "close": float(close)})
     if not bars:
         raise UnknownTicker(f"No price history found for {ticker}.")
@@ -137,6 +146,7 @@ class FinnhubQuotes:
     URL = "https://finnhub.io/api/v1/quote"
 
     def __init__(self, api_key, fetch=get_json):
+        """`fetch(url, headers)` returns parsed JSON; tests pass a fake one."""
         self._api_key = api_key
         self._fetch = fetch
 
@@ -153,6 +163,7 @@ class MassiveHistory:
     URL = "https://api.massive.com/v2/aggs/ticker/{ticker}/range/1/day/{start}/{end}"
 
     def __init__(self, api_key, fetch=get_json, today=date.today):
+        """`fetch(url, headers)` returns parsed JSON; `today()` returns the end date."""
         self._api_key = api_key
         self._fetch = fetch
         self._today = today
@@ -187,9 +198,11 @@ class FakePrices:
     """Deterministic made-up prices for demo mode and tests. No network."""
 
     def __init__(self, today=date.today):
+        """`today()` returns the date history ends before; tests pass a fixed one."""
         self._today = today
 
     def _lookup(self, ticker):
+        """Return (price, prev_close). Raises UnknownTicker for non-demo tickers."""
         if ticker not in DEMO_QUOTES:
             names = ", ".join(DEMO_QUOTES)
             raise UnknownTicker(f"{ticker} isn't in the demo data. Try {names}.")
@@ -219,27 +232,50 @@ class FakePrices:
 # --- Cache and service ---
 
 class TTLCache:
-    """A dict whose entries expire after ttl_seconds."""
+    """A thread-safe dict whose entries expire after ttl_seconds.
 
-    def __init__(self, ttl_seconds, clock=time.monotonic):
+    FastAPI runs `def` routes on a thread pool, so every read and write
+    holds a lock. Expired entries are removed on every `set`, and when
+    `max_entries` is reached the oldest entry is evicted.
+    """
+
+    def __init__(self, ttl_seconds, clock=time.monotonic, max_entries=1000):
+        """`clock()` returns seconds; tests pass a fake clock they can move."""
         self._ttl = ttl_seconds
         self._clock = clock
+        self._max_entries = max_entries
         self._items = {}
+        self._lock = threading.Lock()
+
+    def __len__(self):
+        """Number of stored entries, expired ones included until the next `set`."""
+        with self._lock:
+            return len(self._items)
 
     def get(self, key):
         """Return the cached value, or None if missing or expired."""
-        item = self._items.get(key)
-        if item is None:
-            return None
-        value, expires_at = item
-        if self._clock() >= expires_at:
-            del self._items[key]
-            return None
-        return value
+        with self._lock:
+            item = self._items.get(key)
+            if item is None:
+                return None
+            value, expires_at = item
+            if self._clock() >= expires_at:
+                del self._items[key]
+                return None
+            return value
 
     def set(self, key, value):
         """Store a value until ttl_seconds from now."""
-        self._items[key] = (value, self._clock() + self._ttl)
+        with self._lock:
+            now = self._clock()
+            expired = [k for k, (_, expires_at) in self._items.items() if now >= expires_at]
+            for k in expired:
+                del self._items[k]
+            # Re-insert at the end, so dict order is oldest first.
+            self._items.pop(key, None)
+            while len(self._items) >= self._max_entries:
+                del self._items[next(iter(self._items))]
+            self._items[key] = (value, now + self._ttl)
 
 
 class PriceService:
@@ -253,6 +289,7 @@ class PriceService:
         history_ttl=12 * 3600,
         clock=time.monotonic,
     ):
+        """Sources need `quote(ticker)` and `history(ticker, days)`. TTLs are in seconds."""
         self._quote_source = quote_source
         self._history_source = history_source
         self._quotes = TTLCache(quote_ttl, clock)

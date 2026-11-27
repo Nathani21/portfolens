@@ -25,7 +25,7 @@ def test_quotes(client):
     assert response.status_code == 200
     body = response.json()
     assert body["mode"] == "demo"
-    assert body["quotes"]["AAPL"] == {"price": 231.5, "prev_close": 228.9}
+    assert body["quotes"]["AAPL"] == pytest.approx({"price": 231.5, "prev_close": 228.9})
     assert list(body["quotes"]) == ["AAPL", "MSFT"]
     assert body["errors"] == {}
 
@@ -52,7 +52,8 @@ def test_history(client):
     body = response.json()
     assert body["ticker"] == "AAPL"
     assert len(body["bars"]) == 10
-    assert body["bars"][-1] == {"date": "2026-11-26", "close": 228.9}
+    assert body["bars"][-1]["date"] == "2026-11-26"
+    assert body["bars"][-1]["close"] == pytest.approx(228.9)
 
 
 def test_history_unknown_ticker(client):
@@ -70,7 +71,10 @@ def test_history_days_out_of_range(client, days):
 
 def test_history_provider_failure(client, monkeypatch):
     class Broken:
+        """A history source that always fails like a busy provider."""
+
         def history(self, ticker, days):
+            """Always raise PriceError."""
             raise PriceError("The price service is busy. Try again in a minute.")
 
     monkeypatch.setattr(main, "prices", PriceService(FakePrices(), Broken()))

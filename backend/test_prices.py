@@ -5,7 +5,6 @@ from datetime import date, datetime, timezone
 import pytest
 
 import prices
-from portfolio import Quote
 from prices import (
     FakePrices,
     FinnhubQuotes,
@@ -32,11 +31,26 @@ def ms(year, month, day):
     return int(moment.timestamp() * 1000)
 
 
+def assert_quote(quote, price, prev_close):
+    """Compare a Quote's floats with tolerance."""
+    assert quote.price == pytest.approx(price)
+    assert quote.prev_close == pytest.approx(prev_close)
+
+
+def assert_bars(bars, expected):
+    """Compare bars: dates exactly, closes with tolerance."""
+    assert [b["date"] for b in bars] == [d for d, _ in expected]
+    assert [b["close"] for b in bars] == pytest.approx([c for _, c in expected])
+
+
 class FakeClock:
+    """A clock tests can move forward by changing `now`."""
+
     def __init__(self):
         self.now = 1000.0
 
     def __call__(self):
+        """Return the current fake time."""
         return self.now
 
 
@@ -44,15 +58,18 @@ class CountingSource:
     """Wraps FakePrices and counts calls, to prove the cache works."""
 
     def __init__(self):
+        """Start with zero calls."""
         self.inner = FakePrices(today=lambda: TODAY)
         self.quote_calls = 0
         self.history_calls = 0
 
     def quote(self, ticker):
+        """Count, then delegate."""
         self.quote_calls += 1
         return self.inner.quote(ticker)
 
     def history(self, ticker, days):
+        """Count, then delegate."""
         self.history_calls += 1
         return self.inner.history(ticker, days)
 
@@ -89,7 +106,7 @@ def test_parse_tickers_limit():
 
 def test_parse_finnhub_quote():
     data = {"c": 248.8, "d": -4.09, "dp": -1.6173, "pc": 252.89, "t": 1774641600}
-    assert parse_finnhub_quote("AAPL", data) == Quote(price=248.8, prev_close=252.89)
+    assert_quote(parse_finnhub_quote("AAPL", data), 248.8, 252.89)
 
 
 @pytest.mark.parametrize(
@@ -120,15 +137,25 @@ def test_parse_massive_bars_sorts_and_converts_dates():
             {"t": ms(2026, 11, 24), "c": 229.5},
         ]
     }
-    assert parse_massive_bars("AAPL", data) == [
-        {"date": "2026-11-24", "close": 229.5},
-        {"date": "2026-11-25", "close": 231.0},
-    ]
+    assert_bars(parse_massive_bars("AAPL", data), [("2026-11-24", 229.5), ("2026-11-25", 231.0)])
 
 
 def test_parse_massive_bars_skips_bad_bars():
-    data = {"results": [{"t": ms(2026, 11, 24)}, "junk", {"t": ms(2026, 11, 25), "c": 231}]}
-    assert parse_massive_bars("AAPL", data) == [{"date": "2026-11-25", "close": 231.0}]
+    data = {
+        "results": [
+            {"t": ms(2026, 11, 24)},
+            "junk",
+            {"t": 1e100, "c": 5},  # too large to be a date
+            {"t": ms(2026, 11, 25), "c": 231},
+        ]
+    }
+    assert_bars(parse_massive_bars("AAPL", data), [("2026-11-25", 231.0)])
+
+
+@pytest.mark.parametrize("data", [{"results": 42}, {"results": "AAPL"}, ["not", "a", "dict"]])
+def test_parse_massive_bars_unexpected(data):
+    with pytest.raises(PriceError, match="unexpected response"):
+        parse_massive_bars("AAPL", data)
 
 
 @pytest.mark.parametrize("data", [{"results": []}, {"status": "OK"}, {"results": None}])
@@ -151,7 +178,7 @@ def test_finnhub_sends_key_in_header_not_url():
     assert url == "https://finnhub.io/api/v1/quote?symbol=BRK.B"
     assert headers == {"X-Finnhub-Token": "secret-key"}
     assert "secret-key" not in url
-    assert quote == Quote(price=10, prev_close=9)
+    assert_quote(quote, 10, 9)
 
 
 def test_massive_builds_date_range_and_bearer_header():
@@ -168,13 +195,13 @@ def test_massive_builds_date_range_and_bearer_header():
         "2026-10-28/2026-11-27?adjusted=true&sort=asc"
     )
     assert headers == {"Authorization": "Bearer secret-key"}
-    assert bars == [{"date": "2026-11-26", "close": 5.0}]
+    assert_bars(bars, [("2026-11-26", 5.0)])
 
 
 # --- FakePrices ---
 
 def test_fake_quote():
-    assert FakePrices().quote("AAPL") == Quote(price=231.50, prev_close=228.90)
+    assert_quote(FakePrices().quote("AAPL"), 231.50, 228.90)
 
 
 def test_fake_unknown_ticker_lists_demo_tickers():
@@ -206,6 +233,28 @@ def test_cache_hit_then_expiry():
 
 def test_cache_missing_key():
     assert TTLCache(60).get("nope") is None
+
+
+def test_cache_set_removes_expired_entries():
+    clock = FakeClock()
+    cache = TTLCache(60, clock)
+    cache.set("old", 1)
+    clock.now += 60
+    cache.set("new", 2)
+    assert len(cache) == 1
+    assert cache.get("new") == 2
+
+
+def test_cache_evicts_oldest_at_max_entries():
+    cache = TTLCache(60, FakeClock(), max_entries=2)
+    cache.set("a", 1)
+    cache.set("b", 2)
+    cache.set("a", 3)  # refreshing "a" makes "b" the oldest
+    cache.set("c", 4)
+    assert len(cache) == 2
+    assert cache.get("b") is None
+    assert cache.get("a") == 3
+    assert cache.get("c") == 4
 
 
 # --- PriceService ---
