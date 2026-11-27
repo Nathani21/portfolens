@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+tone_instructions: "Explain the why behind each suggestion. The author is learning, so keep it clear and concrete."
+
+reviews:
+  profile: chill
+  high_level_summary: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/*.png"
+    - "!**/*.svg"
+    - "!frontend/package-lock.json"
+  path_instructions:
+    - path: "backend/**/*.py"
+      instructions: >-
+        Only main.py may import FastAPI. Every other module is pure logic: no web
+        framework imports, no network calls unless it is a price provider. Every
+        function needs a docstring, and new logic needs tests in the same PR.
+        API keys come from environment variables only and must never be logged,
+        returned in a response or hard-coded.
+    - path: "backend/test_*.py"
+      instructions: >-
+        Tests use fixed sample data and must never call a real price API or
+        Gemini. Floats are compared with pytest.approx, never ==. Check that edge
+        cases are covered: empty input, zero values, missing quotes, bad input.
+    - path: "frontend/**"
+      instructions: >-
+        Next.js 16 with the App Router. Follow frontend/AGENTS.md for current
+        Next.js APIs. React Compiler and Cache Components are deliberately off.
+        A2UI messages from the agent must be validated before rendering. No
+        secret may use a NEXT_PUBLIC_ variable or appear in client code.
+    - path: ".github/workflows/**"
+      instructions: >-
+        The jobs must stay named "test" and "build", because branch protection
+        requires those checks. Node and Python versions must match the README.
+
+chat:
+  auto_reply: true
