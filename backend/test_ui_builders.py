@@ -130,6 +130,14 @@ def test_template_bindings_exist_on_each_position():
             assert path in position
 
 
+def test_only_catalog_text_variants_are_used():
+    """Regression: v1.0 Text allows only caption and body (no h1-h5)."""
+    variants = {
+        c.get("variant", "body") for c in dashboard_components() if c["component"] == "Text"
+    }
+    assert variants <= {"caption", "body"}
+
+
 def test_holdings_use_a_template_over_positions():
     holdings = component_by_id(dashboard_components())["holdings"]
     assert holdings["children"] == {"path": "/positions", "componentId": "position_row"}
@@ -192,6 +200,12 @@ def test_check_components_accepts_minimal():
             "Duplicate component id: root",
         ),
         ([{"id": "root", "component": "Surface"}], "unknown component type 'Surface'"),
+        ([{"id": "root", "component": []}], "unknown component type"),
+        ([{"id": "root", "component": {"Text": {}}}], "unknown component type"),
+        ([{"id": "root", "component": "Text", "text": "x", "variant": "h3"}], "variant 'h3' isn't allowed"),
+        ([{"id": "root", "component": "Text", "text": "x", "variant": ["body"]}], "isn't allowed"),
+        ([{"id": "root", "component": "Row", "children": [], "justify": "middle"}], "justify 'middle'"),
+        ([{"id": "root", "component": "Column", "children": [], "align": "baseline"}], "align 'baseline'"),
         ([{"id": "root", "component": "Column", "children": ["ghost"]}], "child 'ghost' doesn't exist"),
         ([{"id": "root", "component": "Card", "child": "ghost"}], "child 'ghost' doesn't exist"),
         ([{"id": "root", "component": "Column", "children": [{"x": 1}]}], "doesn't exist"),
