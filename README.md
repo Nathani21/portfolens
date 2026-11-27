@@ -26,3 +26,10 @@ cd frontend
 npm install
 npm run dev
 ```
+
+Without API keys the backend runs in **demo mode** with made-up prices for AAPL, MSFT, NVDA, GOOGL and AMZN. For live prices, set both keys in the terminal before starting it:
+```
+$env:FINNHUB_API_KEY = "your-finnhub-key"
+$env:MASSIVE_API_KEY = "your-massive-key"
+```
+Check http://127.0.0.1:8000/health: `"prices"` says `demo` or `live`.
