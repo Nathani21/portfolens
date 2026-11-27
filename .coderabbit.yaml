@@ -18,13 +18,16 @@ reviews:
       instructions: >-
         Only main.py may import FastAPI. Every other module is pure logic: no web
         framework imports, no network calls unless it is a price provider. Every
-        function needs a docstring, and new logic needs tests in the same PR.
+        function outside test files needs a docstring, and new logic needs tests
+        in the same PR.
         API keys come from environment variables only and must never be logged,
         returned in a response or hard-coded.
     - path: "backend/test_*.py"
       instructions: >-
         Tests use fixed sample data and must never call a real price API or
-        Gemini. Floats are compared with pytest.approx, never ==. Check that edge
+        Gemini. Test functions don't need docstrings: their names describe the
+        behaviour. Helper classes and functions in tests get a one-line docstring.
+        Floats are compared with pytest.approx, never ==. Check that edge
         cases are covered: empty input, zero values, missing quotes, bad input.
     - path: "frontend/**"
       instructions: >-
