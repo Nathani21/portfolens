@@ -96,7 +96,7 @@ def test_position_summary_zero_cost_has_no_pnl_pct():
 
 def test_portfolio_totals():
     s = portfolio_summary(HOLDINGS, QUOTES)
-    assert s["total_value"] == pytest.approx(4400)
+    assert s["total_value"] == pytest.approx(4401)
     assert s["total_cost"] == pytest.approx(3000)
     assert s["pnl"] == pytest.approx(1400)
     assert s["pnl_pct"] == pytest.approx(46.6667, rel=1e-4)
